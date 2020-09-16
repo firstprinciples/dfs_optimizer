@@ -24,8 +24,9 @@ setuptools.setup(
         'scipy',
         'pandas',
         'matplotlib',
-        'Pillow',
         'scikit-learn',
+        'cplex',
+        'draft_kings'
     ],
     include_package_data=True,
     classifiers=[
