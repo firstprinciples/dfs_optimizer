@@ -14,8 +14,8 @@ class Exposures:
         self.folder = folder
         self.filename = dt.date.fromtimestamp(time.time()).strftime("%Y%m%d")
         self.cols_out = [
-            'display', 'id', 'position', 'salary', 'news_status', 
-            'team_abbreviation', 'start time', 'projections', 'std',
+            'Name', 'ID', 'Position', 'Salary', 'Status', 
+            'TeamAbbrev', 'Time', 'projections', 'std',
             'min_exp', 'max_exp']
         exposures = self._check_exposures()
         if not exposures:
@@ -44,7 +44,7 @@ class Exposures:
         print('Please fill out exposures in ' + path)
 
     def _get_datetime(self):
-        self.df['start time'] = pd.to_datetime(self.df['start time'])
+        self.df['Time'] = pd.to_datetime(self.df['Time'])
 
     def read_exposures(self):
         path = self.folder + self.filename + '.csv'
@@ -76,8 +76,8 @@ class LineupOptimizer:
     
     def _provision_constraints_from_df(self):
         self.projections = self.df['projections'].values
-        self.salaries = self.df['salary'].values / 1000
-        pos_split = [pos.split('/') for pos in self.df['position'].values]
+        self.salaries = self.df['Salary'].values / 1000
+        pos_split = [pos.split('/') for pos in self.df['Position'].values]
         positions_mtx = np.zeros((len(pos_split), 5))
         for i in range(len(pos_split)):
             if 'PG' in pos_split[i]:
@@ -99,14 +99,14 @@ class LineupOptimizer:
         self.min_exp = self.df['min_exp'].values
         times = []
         for idx in self.df.index:
-            start = self.df.loc[idx, 'start time'].to_pydatetime()
+            start = self.df.loc[idx, 'Time'].to_pydatetime()
             times += [start.hour + start.minute / 60 + start.second / 3600]
         
         self.tip_times = np.array(times) + np.arange(self.n_players) / 3600
 
     def _trim_players(self):
         self.df = self.df[self.df['max_exp'] > 0]
-        self.df['ppd'] = self.df['projections'] / self.df['salary'] * 1000
+        self.df['ppd'] = self.df['projections'] / self.df['Salary'] * 1000
         self.df.loc[self.df['min_exp'] > 0, 'ppd'] = np.max(self.df.ppd)
         self.df.sort_values(by='ppd', inplace=True, ascending=False)
         lim_players = 999 // self.n_lineups
@@ -215,7 +215,7 @@ class LineupOptimizer:
         infeasibles = 0
         for j in range(self.n_lineups):
             idx = np.where(self.result[:, j])[0]
-            players = self.df.loc[idx, 'display'].values
+            players = self.df.loc[idx, 'Name'].values
             tip_times = self.tip_times[idx]
             positions = np.concatenate((
                 self.positions[idx], 
