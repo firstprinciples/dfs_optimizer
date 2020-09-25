@@ -25,10 +25,7 @@ def get_contests(date=None, min_fee=0.25, max_fee=101):
         df_contests.reset_index(0, inplace=True, drop=True)
     return df_contests
 
-def get_players(
-    draft_group_id, 
-    exceptions = ['osmance','morrima','bridgmi','millspa','bogdabo','klebema','harklmo','bareajj','ntilifr','hernagu','capelcl','greenja']):
-
+def get_players(draft_group_id):
     draft_players = draftables(draft_group_id)
     df_players = pd.DataFrame(draft_players['draftables'])
     names = list(df_players['names'].values)
@@ -37,7 +34,7 @@ def get_players(
     competitions = list(df_players['competition'].values)
     df_comps = pd.DataFrame(competitions)
     df_comps.columns = ['contest id', 'contest names', 'start time']
-    df_players = pd.concat((df_players,df_comps),axis=1)
+    df_players = pd.concat((df_players, df_comps),axis=1)
     df_players.reset_index(0, drop=True, inplace=True)
     map_cols = {'display' : 'Name', 'id' : 'ID', 'position' : 'Position',
         'news_status' : 'Status', 'salary' : 'Salary', 
@@ -45,6 +42,26 @@ def get_players(
         'team_abbreviation' : 'TeamAbbrev'}
     df_players.rename(columns=map_cols, inplace=True)
     return df_players[list(map_cols.values())]
+
+def read_date(x):
+    _, date, time, tz = x.split(' ')
+    return date + ' ' + time
+
+def read_game(x):
+    game = x.split(' ')[0]
+    away, home = game.split('@')
+    return away + ' @ ' + home
+
+def get_players_from_salaries(path):
+    df = pd.read_csv(path)
+    df['Time'] = pd.to_datetime(df['Game Info'].apply(read_date))
+    df['Game'] = df['Game Info'].apply(read_game)
+    cols_out = ['Name', 'ID', 'Position', 'Salary', 'Game', 'Time', 'TeamAbbrev']
+    optional_cols = ['projections', 'std', 'min_exp', 'max_exp']
+    for col in optional_cols:
+        if col in df.columns:
+            cols_out += [col]
+    return df[cols_out]
 
 class EntriesHandler:
 
@@ -101,7 +118,7 @@ class EntriesHandler:
         df_sheet_lineups.reset_index(0, drop=True, inplace=True)
         self.df_sheet_lineups = df_sheet_lineups
 
-    def add_lineups_to_entries(self, df_lineups):
+    def add_lineups_to_entries(self, df_lineups, version=2):
         self.df_sheet_lineups = pd.concat((self.df_sheet_lineups, df_lineups))
         self.df_sheet_lineups.drop_duplicates(inplace=True)
         drop = max(0, len(self.df_sheet_lineups) - len(self.df_entries))
@@ -112,8 +129,9 @@ class EntriesHandler:
         self.df_sheet_lineups.reset_index(0, inplace=True, drop=True)
         self.df_entries = pd.concat(
             (self.df_entries[self.ENTRIES_COLS], self.df_sheet_lineups), axis=1)
+        self._write_entries_to_csv(version=version)
 
-    def write_entries_to_csv(self, version=2):
+    def _write_entries_to_csv(self, version=2):
         df_entries_out = pd.DataFrame(columns=self.POSITION_COLS)
         for col in self.POSITION_COLS:
             df_entries_out[col] = self.df_entries[col].map(self.exit_map)

@@ -6,8 +6,7 @@ import time
 
 class Exposures:
 
-    def __init__(
-        self, df, auto=False, auto_max=0.4, folder='../data/temp/'):
+    def __init__(self, df, auto=False, auto_max=0.4, folder='../data/temp/'):
         self.df = df
         self.auto = auto
         self.auto_max = auto_max
@@ -18,11 +17,13 @@ class Exposures:
             'TeamAbbrev', 'Time', 'projections', 'std',
             'min_exp', 'max_exp']
         exposures = self._check_exposures()
+        self.need_exposures = False
         if not exposures:
             if self.auto:
                 self._get_auto_exposures()
             else:
                 self._get_exposures()
+                self.need_exposures = True
         
         self._get_datetime()
 
@@ -47,6 +48,9 @@ class Exposures:
         self.df['Time'] = pd.to_datetime(self.df['Time'])
 
     def read_exposures(self):
+        if not self.need_exposures:
+            return self.df
+            
         path = self.folder + self.filename + '.csv'
         self.df = pd.read_csv(path, index_col=0)
         self._get_datetime()
