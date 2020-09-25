@@ -71,6 +71,7 @@ class EntriesHandler:
     def __init__(self, entries_path, df, read_lineups=False):
         self.entries_path = entries_path
         self.df = df
+        self.df.index = self.df.Name
         self.df_sheet_lineups = pd.DataFrame(columns=self.POSITION_COLS)
         self._read_entries()
         self._make_id_map_dicts()

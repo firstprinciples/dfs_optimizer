@@ -86,7 +86,8 @@ class LineupGenerator:
             std = np.std(spread)
             self.df_lineups.loc[idx, 'mean'] = mean
             self.df_lineups.loc[idx, 'std'] = std
-
+        
+        self.df.reset_index(0, inplace=True, drop=False)
         return self.df_lineups
 
     def enforce_exposures(self):

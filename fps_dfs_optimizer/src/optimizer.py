@@ -50,7 +50,7 @@ class Exposures:
     def read_exposures(self):
         if not self.need_exposures:
             return self.df
-            
+
         path = self.folder + self.filename + '.csv'
         self.df = pd.read_csv(path, index_col=0)
         self._get_datetime()
@@ -176,14 +176,14 @@ class LineupOptimizer:
                 lin_expr=[cplex.SparsePair(
                     ind=index, 
                     val=self.guards)],
-                rhs=[3.0],
+                rhs=[4.0],
                 names=["guard_limit"],
                 senses=["G"])
             self.lp.linear_constraints.add(
                 lin_expr=[cplex.SparsePair(
                     ind=index, 
                     val=self.forwards)],
-                rhs=[3.0],
+                rhs=[4.0],
                 names=["forward_limit"],
                 senses=["G"])
 
@@ -284,17 +284,19 @@ class LineupSorter:
 
     def _get_constraints(self):
         for i in range(self.PLAYERS):
+            index = ['y' + str(i) + str(j) for j in range(self.PLAYERS)]
             self.lp.linear_constraints.add(
                 lin_expr=[cplex.SparsePair(
-                    ind=[i * self.PLAYERS + j for j in range(self.PLAYERS)], 
+                    ind=index, 
                     val=[1.0] * self.PLAYERS)],
                 rhs=[1.0],
                 names=["player_limit" + str(i)],
                 senses=["E"])
         for j in range(self.PLAYERS):
+            index = ['y' + str(i) + str(j) for i in range(self.PLAYERS)]
             self.lp.linear_constraints.add(
                 lin_expr=[cplex.SparsePair(
-                    ind=[i * self.PLAYERS + j for i in range(self.PLAYERS)], 
+                    ind=index, 
                     val=[1.0] * self.PLAYERS)],
                 rhs=[1.0],
                 names=["position_limit"+str(j)],
@@ -303,7 +305,7 @@ class LineupSorter:
             for j in range(self.PLAYERS):
                 self.lp.linear_constraints.add(
                     lin_expr=[cplex.SparsePair(
-                        ind=[i * self.PLAYERS + j], 
+                        ind=['y' + str(i) + str(j)], 
                         val=[1.0])],
                     rhs=[self.positions[i, j]],
                     names=["position_constraint"+str(i)+str(j)],
