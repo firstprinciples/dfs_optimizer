@@ -41,6 +41,7 @@ def get_players(draft_group_id):
         'contest names' : 'Game', 'start time' : 'Time',
         'team_abbreviation' : 'TeamAbbrev'}
     df_players.rename(columns=map_cols, inplace=True)
+    df_players['Time'] = pd.to_datetime(df_players['Time'])
     return df_players[list(map_cols.values())]
 
 def read_date(x):
@@ -119,13 +120,16 @@ class EntriesHandler:
         df_sheet_lineups.reset_index(0, drop=True, inplace=True)
         self.df_sheet_lineups = df_sheet_lineups
 
-    def add_lineups_to_entries(self, df_lineups, version=2):
-        self.df_sheet_lineups = pd.concat((self.df_sheet_lineups, df_lineups))
-        self.df_sheet_lineups.drop_duplicates(inplace=True)
-        drop = max(0, len(self.df_sheet_lineups) - len(self.df_entries))
-        if drop > 0:
-            print('Dropping {} lineups'.format(drop))
-            self.df_sheet_lineups = self.df_sheet_lineups.iloc[:-drop]
+    def add_lineups_to_entries(self, df_lineups, drop_entries=False, version=2):
+        if drop_entries:
+            self.df_sheet_lineups = df_lineups
+        else:
+            self.df_sheet_lineups = pd.concat((self.df_sheet_lineups, df_lineups))
+            self.df_sheet_lineups.drop_duplicates(inplace=True)
+            drop = max(0, len(self.df_sheet_lineups) - len(self.df_entries))
+            if drop > 0:
+                print('Dropping {} lineups'.format(drop))
+                self.df_sheet_lineups = self.df_sheet_lineups.iloc[:-drop]
 
         self.df_sheet_lineups.reset_index(0, inplace=True, drop=True)
         self.df_entries = pd.concat(
@@ -142,3 +146,24 @@ class EntriesHandler:
         df_entries_out.to_csv(
             self.entries_path[:-4] + \
                 '_v' + str(version) + '.csv', index=False)
+
+    def get_player_distribution(self, df):
+        flat = df.loc[:, self.POSITION_COLS].values.flatten()
+        return pd.Series(flat).value_counts() / len(df)
+
+    def infer_max_exps(self, buffer=0.2):
+        self.buffer = buffer
+        current_exp = self.get_player_distribution(self.df_sheet_lineups)
+        self.df['max_exp'] = self.buffer
+        self.df.loc[current_exp.index, 'max_exp'] += current_exp.values
+
+    def map_to_col(self, x, col):
+        return self.df_sheet_lineups.apply(lambda x: self._col_mapper(x, self.df[col]))
+
+    @staticmethod
+    def _col_mapper(x, ser):
+        out = []
+        for p in x:
+            out += [ser.loc[p]]
+
+        return out

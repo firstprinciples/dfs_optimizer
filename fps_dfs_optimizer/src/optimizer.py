@@ -1,8 +1,11 @@
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 import cplex
 import datetime as dt
 import time
+import copy
+import pyomo.environ as pyo
 
 class Exposures:
 
@@ -134,6 +137,8 @@ class LineupOptimizer:
                 self.lp.variables.add(
                     names= ["y_" + str(i) + '_' + str(j)])
                 self.lp.variables.set_types("y_" + str(i) + '_' + str(j), self.lp.variables.type.binary)
+                # self.lp.variables.set_lower_bounds("y_" + str(i) + '_' + str(j), 0.0)
+                # self.lp.variables.set_upper_bounds("y_" + str(i) + '_' + str(j), 1.0)
                 self.lp.objective.set_linear(
                     "y_" + str(i) + '_' + str(j), 
                     (1 + self.order * (self.n_lineups - j - 1)) * self.projections[i])
@@ -225,8 +230,8 @@ class LineupOptimizer:
                 self.positions[idx], 
                 np.expand_dims(self.guards[idx], axis=1), 
                 np.expand_dims(self.forwards[idx], axis=1), 
-                np.ones((int(self.PLAYERS), 1))
-                ), axis=1)
+                np.ones(
+                    (int(self.PLAYERS), 1))), axis=1)
             sorter = LineupSorter(tip_times, positions)
             result = sorter.solve()
             if result != 'infeasible':
@@ -320,3 +325,264 @@ class LineupSorter:
         else:
             self.result = "infeasible"
         return self.result
+
+
+class Reoptimizer:
+    
+    def __init__(self, entries, cap_limit=50000, solver='glpk', 
+                 timelimit=120, mipgap=0.003, verbose=False, visualize=False):
+        self.entries = entries
+        self.cap_limit = cap_limit
+        self.solver = solver
+        self.timelimit = timelimit
+        self.mipgap = mipgap
+        self.verbose = verbose
+        self.visualize = visualize
+
+        self.df = self.entries.df
+        self.df_lineups = self.entries.df_sheet_lineups
+        self._get_locked_matrix()
+        self._get_available_salary()
+        self._get_unlocked_inds()
+        self._create_model()
+
+    def initialize(self):
+        self._get_model_data()
+        self._create_instance()
+        self._get_optimizer(use_time_lim=False)
+
+        self.df_optimal = copy.deepcopy(self.df_locked)
+
+    def solve(self):
+        open_slots = (self.df_locked==0).sum().sum()
+        print('Unfilled spots remaining: {}'.format(open_slots))
+        if self.visualize:
+            plt.rcParams['figure.figsize'] = 12, 8
+            plt.imshow((self.df_locked==0).T)
+            plt.show()
+        
+        while open_slots > 0:
+            self._iterate_opt()
+            self._get_optimizer()
+            open_slots = (self.df_optimal==0).sum().sum()
+            print('Unfilled spots remaining: {}'.format(open_slots))
+            if self.visualize:
+                plt.imshow((self.df_optimal==0).T)
+                plt.show()
+
+    def _iterate_opt(self):
+        self.opt.solve(self.instance, tee=self.verbose)
+        for n, p, l in self.npl_set:
+            if self.instance.assignment_npl[(n, p, l)].value >= 0.99:
+                self.df_optimal.loc[int(l[2:]), p] = n
+                self.instance.assignment_npl[(n, p, l)].fix(1.0)
+            elif self.instance.assignment_npl[(n, p, l)].value >= 0.01:
+                self.instance.assignment_npl[(n, p, l)].domain = pyo.Binary
+            else:
+                self.instance.assignment_npl[(n, p, l)].fixed = False
+
+    def _get_optimizer(self, use_time_lim=True):
+        self.opt = pyo.SolverFactory(self.solver)
+        self.opt.options["mipgap"] = self.mipgap
+        if use_time_lim:
+            self.opt.options["tmlim"] = self.timelimit
+
+    def _get_locked_matrix(self):
+        self.df_locked = pd.DataFrame(columns=self.entries.POSITION_COLS, index=self.df_lineups.index)
+        for lineup in self.df_lineups.index:
+            for col in self.entries.POSITION_COLS:
+                player = self.df_lineups.loc[lineup, col]
+                if self.df.loc[player, 'locked']:
+                    self.df_locked.loc[lineup, col] = player
+                else:
+                    self.df_locked.loc[lineup, col] = 0
+
+    def _get_available_salary(self):
+        self.salary_available = {}
+        for lineup in self.df_lineups.index:
+            players = [self.df_locked.loc[lineup, j] for j in self.entries.POSITION_COLS]
+            self.salary_available[lineup] = self.cap_limit - sum(self.df.loc[p, 'Salary'] for p in players if p != 0)
+
+    def _get_model_data(self):
+        self._get_unlocked_inds()
+        self._get_model_sets()
+        self._get_model_multisets()
+        self._get_model_params()
+        self._get_current_lineup_summary()
+
+    def _get_unlocked_inds(self):
+        self.unlocked = self.df.index[~self.df.locked]
+
+    def _get_model_sets(self):
+        self.name_set = self.unlocked.values.tolist()
+        self.lineup_set = ['L_' + str(i) for i in self.df_lineups.index]
+        self.position_set = self.entries.POSITION_COLS
+
+    def _get_model_multisets(self):
+        self.np_set = []
+        for n in self.name_set:
+            self.np_set += [(n, 'UTIL')]
+            pos_split = self.df.loc[n, 'Position'].split('/')
+            for p in pos_split:
+                self.np_set += [(n, p)]
+                if ('G' in p) & ((n, 'G') not in self.np_set):
+                    self.np_set += [(n, 'G')]
+
+                if ('F' in p) & ((n, 'F') not in self.np_set):
+                    self.np_set += [(n, 'F')]
+
+        self.pl_set = []
+        for l in self.lineup_set:
+            for p in self.position_set:
+                if self.df_locked.loc[int(l[2:]), p] == 0:
+                    self.pl_set += [(p, l)]
+
+        self.npl_set = []
+        for n in self.name_set:
+            for l in self.lineup_set:
+                for p in self.position_set:
+                    if ((p, l) in self.pl_set) & ((n, p) in self.np_set):
+                        self.npl_set += [(n, p, l)]
+
+    def _get_model_params(self):
+        # start times
+        time_start = pd.Series([t.hour * 60 + t.minute \
+            for t in self.df.Time[self.unlocked]], index=self.unlocked)
+        time_start_norm = (time_start - time_start.min()) / (time_start.max() - time_start.min())
+        self.start_times_n = time_start_norm.to_dict()
+
+        # projections
+        self.projections_n = self.df.projections[self.unlocked].to_dict()
+
+        # salaries
+        self.salaries_n = (self.df.Salary[self.unlocked] / 1000).to_dict()
+
+        # exposures
+        self.max_exp_n = (len(self.lineup_set) * self.df.max_exp[self.unlocked]).to_dict()
+        self.min_exp_n = (len(self.lineup_set) * self.df.min_exp[self.unlocked]).to_dict()
+
+        # available cap
+        self.cap_l = {'L_'+str(i): self.salary_available[i]/1000 \
+                for i in self.salary_available.keys()}
+
+        # spots open in lineup
+        self.players_per_lineup_l = pd.Series(np.where(self.df_locked==0)[0]).value_counts()
+        for i in range(len(self.lineup_set)):
+            if i not in self.players_per_lineup_l.index:
+                self.players_per_lineup_l[i] = 0
+
+        self.players_per_lineup_l = {'L_' + str(i): float(self.players_per_lineup_l.loc[i]) \
+            for i in self.players_per_lineup_l.index}
+
+        # start time value
+        self.start_time_bonus_p = {p: 0.0 for p in self.position_set[:5]}
+        self.start_time_bonus_p['G'] = 0.1
+        self.start_time_bonus_p['F'] = 0.1
+        self.start_time_bonus_p['UTIL'] = 0.2
+
+    def _get_current_lineup_summary(self):
+        self.df_current = pd.concat(
+            (pd.Series(self.players_per_lineup_l), pd.Series(self.cap_l)), axis=1)
+        self.df_current.columns = ['players', 'cap']
+        self.df_current.sort_values(by='cap')
+
+    def _create_instance(self):
+        data = {
+            None: {
+                'name_set': {None: self.name_set},
+                'lineup_set': {None: self.lineup_set},
+                'position_set': {None: self.position_set},
+                'np_set': self.np_set,
+                'pl_set': self.pl_set,
+                'npl_set': self.npl_set,
+                'projections_n': self.projections_n,
+                'salaries_n': self.salaries_n,
+                'cap_l': self.cap_l,
+                'players_per_lineup_l': self.players_per_lineup_l,
+                'max_exp_n': self.max_exp_n,
+                'min_exp_n': self.min_exp_n,
+                'start_times_n': self.start_times_n,
+                'start_time_bonus_p': self.start_time_bonus_p}}
+
+        self.instance = self.model.create_instance(data)
+
+    def _create_model(self):
+        self.model = pyo.AbstractModel()
+        self._get_base_sets()
+        self._get_multisets()
+        self._get_params()
+        self._get_vars()
+        self._get_constraints()
+        self._get_objective()
+
+    def _get_base_sets(self):
+        self.model.name_set = pyo.Set()
+        self.model.lineup_set = pyo.Set()
+        self.model.position_set = pyo.Set()
+
+    def _get_multisets(self):
+        self.model.nl_set = self.model.name_set * self.model.lineup_set
+        self.model.np_set = pyo.Set(within = self.model.name_set * self.model.position_set)
+        self.model.pl_set = pyo.Set(within = self.model.position_set * self.model.lineup_set)
+        self.model.npl_set = pyo.Set(within = self.model.name_set * self.model.position_set * self.model.lineup_set)
+
+    def _get_params(self):
+        self.model.projections_n = pyo.Param(self.model.name_set)
+        self.model.salaries_n = pyo.Param(self.model.name_set)
+        self.model.start_times_n = pyo.Param(self.model.name_set)
+        self.model.start_time_bonus_p = pyo.Param(self.model.position_set)
+        self.model.cap_l = pyo.Param(self.model.lineup_set)
+        self.model.players_per_lineup_l = pyo.Param(self.model.lineup_set)
+        self.model.max_exp_n = pyo.Param(self.model.name_set)
+        self.model.min_exp_n = pyo.Param(self.model.name_set)
+
+    def _get_vars(self):
+        self.model.assignment_npl = pyo.Var(self.model.npl_set, within=pyo.UnitInterval)
+
+    def _get_objective(self):
+        self.model.obj = pyo.Objective(rule=self._objective_rule, sense=pyo.maximize)
+
+    def _get_constraints(self):
+        self.model.cap_limit_l = pyo.Constraint(self.model.lineup_set, rule=self._cap_limit_rule)
+        self.model.player_limit_l = pyo.Constraint(self.model.lineup_set, rule=self._player_limit_rule)
+        self.model.exposure_limit_n = pyo.Constraint(self.model.name_set, rule=self._exposure_limit_rule)
+        self.model.fill_spot_pl = pyo.Constraint(self.model.pl_set, rule=self._position_fill_rule)
+        self.model.player_in_lineup_once_nl = pyo.Constraint(self.model.nl_set, rule=self._player_per_lineup_rule)
+
+    @staticmethod
+    def _objective_rule(model):
+        objective = sum(
+            (model.projections_n[n] + model.start_times_n[n] * model.start_time_bonus_p[p]) \
+                * model.assignment_npl[(n, p, l)] \
+                for n, p, l in model.npl_set)
+        return objective
+
+    @staticmethod
+    def _cap_limit_rule(model, l):
+        salary = sum(model.salaries_n[n] * model.assignment_npl[(n, p, l)] \
+            for n, p in model.np_set if (n, p, l) in model.npl_set)
+        return (None, salary, model.cap_l[l])
+
+    @staticmethod
+    def _player_limit_rule(model, l):
+        players = sum(model.assignment_npl[(n, p, l)] \
+            for n, p in model.np_set if (n, p, l) in model.npl_set)
+        return (model.players_per_lineup_l[l], players, model.players_per_lineup_l[l])
+
+    @staticmethod
+    def _exposure_limit_rule(model, n):
+        exposure = sum(model.assignment_npl[(n, p, l)] \
+            for p, l in model.pl_set if (n, p, l) in model.npl_set)
+        return (model.min_exp_n[n], exposure, model.max_exp_n[n])
+
+    @staticmethod
+    def _position_fill_rule(model, p, l):
+        spot_fill = sum(model.assignment_npl[(n, p, l)] \
+            for n in model.name_set if (n, p, l) in model.npl_set)
+        return (1.0, spot_fill, 1.0)
+
+    @staticmethod
+    def _player_per_lineup_rule(model, n, l):
+        player_in_lineup = sum(model.assignment_npl[(n, p, l)] \
+            for p in model.position_set if (n, p, l) in model.npl_set)
+        return (0.0, player_in_lineup, 1.0)
