@@ -1,3 +1,4 @@
+from fps_dfs_optimizer.src.draftkings_tools import get_players_from_salaries
 import pandas as pd
 import numpy as np
 from scipy.stats import norm
@@ -12,14 +13,13 @@ class LineupGenerator:
 
     def __init__(
         self, df, n_lineups_to_optimize, batch_size, 
-        var_multiple=0.5, drop_fraction=0.5, time_limit=1, 
+        drop_fraction=0.5, time_limit=1, 
         duplicates_lim=100, verbose=False):
 
         self.df = df
         self.n_players = len(self.df)
         self.n_lineups_to_optimize = n_lineups_to_optimize
         self.batch_size = batch_size
-        self.var_multiple = var_multiple
         self.drop_fraction = drop_fraction
         self.time_limit = time_limit
         self.duplicates_lim = duplicates_lim
@@ -32,6 +32,9 @@ class LineupGenerator:
         self.df_lineups.drop_duplicates(inplace=True)
         self.df_lineups.reset_index(inplace=True, drop=True)
         return self.df_lineups
+
+    def update_exp(self, path):
+        self.df = get_players_from_salaries(path)
 
     def _generate(self):
         
@@ -87,10 +90,9 @@ class LineupGenerator:
             self.df_lineups.loc[idx, 'mean'] = mean
             self.df_lineups.loc[idx, 'std'] = std
         
-        self.df.reset_index(0, inplace=True, drop=False)
         return self.df_lineups
 
-    def enforce_exposures(self):
+    def enforce_exposures(self, var_multiple):
         player_dist = self.get_player_distribution(self.df_lineups)
         players = list(player_dist.index)
         lineup_mtx = self._get_lineup_mtx(players)
@@ -100,13 +102,13 @@ class LineupGenerator:
         for k in range(iterations):
             exp = ExposureEnforcer(
                 lineup_mtx.iloc[1000 * k: 1000 * (k+1), :], 
-                1000 / iterations, self.df.loc[players], self.var_multiple)
+                1000 / iterations, self.df.loc[players], var_multiple)
             self.results += exp.solve()
         
         idx = np.where(np.array(self.results).astype(int))[0]
         exp = ExposureEnforcer(
             lineup_mtx.iloc[idx, :], 
-            self.n_lineups_to_optimize, self.df.loc[players], self.var_multiple)
+            self.n_lineups_to_optimize, self.df.loc[players], var_multiple)
         self.result = exp.solve()
         self.df_optimal = self.df_lineups.loc[np.where(np.array(self.result).astype(int))[0]]
         self.df_optimal.reset_index(0, inplace=True, drop=True)

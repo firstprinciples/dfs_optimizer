@@ -70,14 +70,14 @@ def get_players_df(slate='main'):
     today = get_today()
     df_contests = get_contests(today)
     df_main, df_night, df_turbo = get_full_slate(df_contests)
-    night_group_id = df_night.draft_group_id.unique()[0]
-    turbo_group_id = df_turbo.draft_group_id.unique()[0]
-    main_group_id = df_main.draft_group_id.unique()[0]
     if slate == 'turbo':
+        turbo_group_id = df_turbo.draft_group_id.unique()[0]
         return get_players(turbo_group_id)
     elif slate == 'night':
+        night_group_id = df_night.draft_group_id.unique()[0]
         return get_players(night_group_id)
     else:
+        main_group_id = df_main.draft_group_id.unique()[0]
         return get_players(main_group_id)
 
 def read_date(x):
@@ -181,7 +181,7 @@ class EntriesHandler:
             (self.df_entries[self.ENTRIES_COLS], df_entries_out), axis=1)
         df_entries_out.to_csv(
             self.entries_path[:-4] + \
-                '_v' + str(version) + '.csv', index=False)
+                + '_' + str(version) + '.csv', index=False)
 
     def get_player_distribution(self, df):
         flat = df.loc[:, self.POSITION_COLS].values.flatten()
