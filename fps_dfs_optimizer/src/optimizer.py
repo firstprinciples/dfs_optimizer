@@ -329,11 +329,12 @@ class LineupSorter:
 
 class Reoptimizer:
     
-    def __init__(self, entries, cap_limit=50000, solver='glpk', 
-                 timelimit=120, mipgap=0.003, verbose=False, visualize=False):
+    def __init__(self, entries, cap_limit=50000, solver='glpk', executable=None,
+                 timelimit=120, mipgap=0.001, verbose=False, visualize=False):
         self.entries = entries
         self.cap_limit = cap_limit
         self.solver = solver
+        self.executable = executable
         self.timelimit = timelimit
         self.mipgap = mipgap
         self.verbose = verbose
@@ -346,6 +347,8 @@ class Reoptimizer:
         self._get_unlocked_inds()
         self._create_model()
 
+        self.fixed_last = 1200
+
     def initialize(self):
         self._get_model_data()
         self._create_instance()
@@ -354,38 +357,67 @@ class Reoptimizer:
         self.df_optimal = copy.deepcopy(self.df_locked)
 
     def solve(self):
-        open_slots = (self.df_locked==0).sum().sum()
-        print('Unfilled spots remaining: {}'.format(open_slots))
+        self.open_slots = (self.df_locked==0).sum().sum()
+        print('Unfilled spots remaining: {}'.format(self.open_slots))
         if self.visualize:
             plt.rcParams['figure.figsize'] = 12, 8
             plt.imshow((self.df_locked==0).T)
             plt.show()
         
-        while open_slots > 0:
+        while self.open_slots > 0:
             self._iterate_opt()
             self._get_optimizer()
-            open_slots = (self.df_optimal==0).sum().sum()
-            print('Unfilled spots remaining: {}'.format(open_slots))
+            self.open_slots = (self.df_optimal==0).sum().sum()
+            print('Unfilled spots remaining: {}'.format(self.open_slots))
             if self.visualize:
                 plt.imshow((self.df_optimal==0).T)
                 plt.show()
 
     def _iterate_opt(self):
         self.opt.solve(self.instance, tee=self.verbose)
+        cutoff = np.minimum(0.6, np.maximum(0.001, (0.599/90 * (self.open_slots - 130) + 0.6)))
+        self.binaries = 0
+        # self.fixed = 0
+        # rands = np.random.choice(self.fixed_last, size=10, replace=False)
+        # j = 0
         for n, p, l in self.npl_set:
-            if self.instance.assignment_npl[(n, p, l)].value >= 0.99:
+            if self.instance.assignment_npl[(n, p, l)].value == 1.0:
                 self.df_optimal.loc[int(l[2:]), p] = n
+                self.instance.assignment_npl[(n, p, l)].domain = pyo.UnitInterval
                 self.instance.assignment_npl[(n, p, l)].fix(1.0)
-            elif self.instance.assignment_npl[(n, p, l)].value >= 0.01:
+                # j += 1
+                # if j in rands:
+                #     self.instance.assignment_npl[(n, p, l)].fixed = False
+                #     self.df_optimal.loc[int(l[2:]), p] = 0
+                # else:
+                #     self.fixed += 1
+                    
+            elif self.instance.assignment_npl[(n, p, l)].value >= cutoff:
                 self.instance.assignment_npl[(n, p, l)].domain = pyo.Binary
+                self.binaries += 1
             else:
                 self.instance.assignment_npl[(n, p, l)].fixed = False
 
+        #if self.verbose:
+        print('Cutoff set to {}; {} variables converted to binaries'.format(cutoff, self.binaries))
+
+        # self.fixed_last = copy.deepcopy(self.fixed)
+        # print('Fixed last: {}'.format(self.fixed_last))
+
     def _get_optimizer(self, use_time_lim=True):
-        self.opt = pyo.SolverFactory(self.solver)
-        self.opt.options["mipgap"] = self.mipgap
+        if self.executable is None:
+            self.opt = pyo.SolverFactory(self.solver)
+        else:
+            self.opt = pyo.SolverFactory(self.solver, executable=self.executable)
+
         if use_time_lim:
-            self.opt.options["tmlim"] = self.timelimit
+            if self.solver == 'glpk':
+                self.opt.options["mipgap"] = self.mipgap
+                self.opt.options["tmlim"] = self.timelimit
+            elif self.solver == 'cbc':
+                self.opt.options["sec"] = self.timelimit
+            elif self.solver == 'cplex':
+                self.opt.options["timelimit"] = self.timelimit
 
     def _get_locked_matrix(self):
         self.df_locked = pd.DataFrame(columns=self.entries.POSITION_COLS, index=self.df_lineups.index)

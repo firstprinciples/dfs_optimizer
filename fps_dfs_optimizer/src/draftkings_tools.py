@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import datetime as dt
 import time
 
@@ -6,7 +7,7 @@ from draft_kings.data import Sport
 from draft_kings.client import contests, draftables
 
 def get_today():
-    return dt.date.fromtimestamp(time.time())
+    return dt.date.today()
 
 def get_contests(date=None, min_fee=0.25, max_fee=101):
     the_contests = contests(sport=Sport.NBA)
@@ -18,7 +19,14 @@ def get_contests(date=None, min_fee=0.25, max_fee=101):
     if date is not None:
         inds = []
         for ind in df_contests.index:
-            if df_contests.loc[ind, 'starts_at'].date() == date:
+            date += dt.timedelta(days=1)
+            cur_time = dt.datetime(
+                date.year, 
+                date.month, 
+                date.day, 
+                hour=6, 
+                tzinfo=dt.timezone.utc)
+            if pd.to_datetime(df_contests.loc[ind, 'starts_at']) <= cur_time:
                 inds += [ind]
         
         df_contests = df_contests.loc[inds]
@@ -42,7 +50,35 @@ def get_players(draft_group_id):
         'team_abbreviation' : 'TeamAbbrev'}
     df_players.rename(columns=map_cols, inplace=True)
     df_players['Time'] = pd.to_datetime(df_players['Time'])
+    df_players = df_players.loc[
+        df_players['Name'].drop_duplicates().index]
+    df_players.reset_index(0, inplace=True, drop=True)
     return df_players[list(map_cols.values())]
+
+def get_full_slate(df_contests):
+    lengths = [
+        s.split('(')[-1].split(')')[0].split(' ') for s in df_contests.name]
+    night = df_contests.loc[df_contests.index[
+        np.array([l == ['Night'] for l in lengths])]]
+    turbo = df_contests.loc[df_contests.index[
+        np.array([l == ['Turbo'] for l in lengths])]]
+    draft_groups = list(df_contests.groupby(by='draft_group_id'))
+    full = df_contests[df_contests['draft_group_id']==draft_groups[0][0]]
+    return full, night, turbo
+
+def get_players_df(slate='main'):
+    today = get_today()
+    df_contests = get_contests(today)
+    df_main, df_night, df_turbo = get_full_slate(df_contests)
+    night_group_id = df_night.draft_group_id.unique()[0]
+    turbo_group_id = df_turbo.draft_group_id.unique()[0]
+    main_group_id = df_main.draft_group_id.unique()[0]
+    if slate == 'turbo':
+        return get_players(turbo_group_id)
+    elif slate == 'night':
+        return get_players(night_group_id)
+    else:
+        return get_players(main_group_id)
 
 def read_date(x):
     _, date, time, tz = x.split(' ')
@@ -157,7 +193,7 @@ class EntriesHandler:
         self.df['max_exp'] = self.buffer
         self.df.loc[current_exp.index, 'max_exp'] += current_exp.values
 
-    def map_to_col(self, x, col):
+    def map_to_col(self, col):
         return self.df_sheet_lineups.apply(lambda x: self._col_mapper(x, self.df[col]))
 
     @staticmethod
