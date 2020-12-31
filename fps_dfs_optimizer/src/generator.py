@@ -60,6 +60,9 @@ class LineupGenerator:
             df['min_exp'] = df['min_exp'] * (1 + self.drop_fraction)
             optimizer = LineupOptimizer(df, batch, order=False, time_limit=self.time_limit, verbose=self.verbose)
             optimizer.solve()
+            if optimizer.result == 'infeasible':
+                print('batch infeasible')
+                continue
             lineups = optimizer.sort_lineups()
             df_lineups = pd.concat((df_lineups, lineups))
             length = len(df_lineups)
