@@ -94,7 +94,7 @@ def get_players_from_salaries(path):
     df['Time'] = pd.to_datetime(df['Game Info'].apply(read_date))
     df['Game'] = df['Game Info'].apply(read_game)
     cols_out = ['Name', 'ID', 'Position', 'Salary', 'Game', 'Time', 'TeamAbbrev']
-    optional_cols = ['projections', 'std', 'min_exp', 'max_exp']
+    optional_cols = ['projections', 'std', 'min_exp', 'max_exp', 'dk_points_actual']
     for col in optional_cols:
         if col in df.columns:
             cols_out += [col]
@@ -170,6 +170,16 @@ class EntriesHandler:
         self.df_sheet_lineups.reset_index(0, inplace=True, drop=True)
         self.df_entries = pd.concat(
             (self.df_entries[self.ENTRIES_COLS], self.df_sheet_lineups), axis=1)
+        if 'dk_points_actual' in self.df.columns:
+            name_to_actual_dict = self.df['dk_points_actual'].to_dict()
+            df_points = pd.DataFrame(
+                columns=self.POSITION_COLS, 
+                index=self.df_entries.index
+            )
+            for col in self.POSITION_COLS:
+                df_points[col] = self.df_entries[col].map(name_to_actual_dict)
+            self.df_entries['dk_points_actual'] = df_points.sum(axis=1)
+
         self._write_entries_to_csv(version=version)
 
     def _write_entries_to_csv(self, version=2):
@@ -179,9 +189,12 @@ class EntriesHandler:
         
         df_entries_out = pd.concat(
             (self.df_entries[self.ENTRIES_COLS], df_entries_out), axis=1)
+        if 'dk_points_actual' in self.df.columns:
+            df_entries_out['dk_points_actual'] = self.df_entries['dk_points_actual']
+
         df_entries_out.to_csv(
             self.entries_path[:-4] + \
-                + '_' + str(version) + '.csv', index=False)
+                '_' + str(version) + '.csv', index=False)
 
     def get_player_distribution(self, df):
         flat = df.loc[:, self.POSITION_COLS].values.flatten()
