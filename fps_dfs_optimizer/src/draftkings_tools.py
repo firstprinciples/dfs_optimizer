@@ -183,14 +183,16 @@ class EntriesHandler:
         self._write_entries_to_csv(version=version)
 
     def _write_entries_to_csv(self, version=2):
-        df_entries_out = pd.DataFrame(columns=self.POSITION_COLS)
-        for col in self.POSITION_COLS:
-            df_entries_out[col] = self.df_entries[col].map(self.exit_map)
-        
-        df_entries_out = pd.concat(
-            (self.df_entries[self.ENTRIES_COLS], df_entries_out), axis=1)
         if 'dk_points_actual' in self.df.columns:
+            df_entries_out = self.df_entries[self.POSITION_COLS]
             df_entries_out['dk_points_actual'] = self.df_entries['dk_points_actual']
+        else:
+            df_entries_out = pd.DataFrame(columns=self.POSITION_COLS)
+            for col in self.POSITION_COLS:
+                df_entries_out[col] = self.df_entries[col].map(self.exit_map)
+        
+            df_entries_out = pd.concat(
+                (self.df_entries[self.ENTRIES_COLS], df_entries_out), axis=1)
 
         df_entries_out.to_csv(
             self.entries_path[:-4] + \
