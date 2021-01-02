@@ -12,13 +12,12 @@ class LineupGenerator:
     POSITION_COLS = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
 
     def __init__(
-        self, df, n_lineups_to_optimize, batch_size, 
+        self, df, batch_size, 
         drop_fraction=0.5, time_limit=1, 
         duplicates_lim=100, verbose=False):
 
         self.df = df
         self.n_players = len(self.df)
-        self.n_lineups_to_optimize = n_lineups_to_optimize
         self.batch_size = batch_size
         self.drop_fraction = drop_fraction
         self.time_limit = time_limit
@@ -95,25 +94,71 @@ class LineupGenerator:
         
         return self.df_lineups
 
-    def enforce_exposures(self, var_multiple):
+    def get_lineup_correlation(self, sims=10000):
+        self.df.index = self.df.Name
+        dists = norm().rvs(size=(len(self.df), sims))
+        player_sims = self.df['projections'].values.reshape(-1, 1) + \
+            dists * self.df['std'].values.reshape(-1, 1)
+        df_sims = pd.DataFrame(player_sims, index=self.df.index)
+
+        lineup_sims = {}
+        for idx in self.df_lineups.index:
+            players = self.df_lineups.loc[idx, self.POSITION_COLS].values
+            lineup_sims[idx] = df_sims.loc[players, :].sum(axis=0)
+            mean = lineup_sims[idx].mean()
+            std = lineup_sims[idx].std()
+            self.df_lineups.loc[idx, 'mean'] = mean
+            self.df_lineups.loc[idx, 'std'] = std
+        
+        lineup_sims = pd.DataFrame(lineup_sims)
+        lineup_sims_norm = lineup_sims - lineup_sims.mean(axis=0)
+        self.lineup_cov = (lineup_sims_norm.T @ lineup_sims_norm) / sims + \
+            0.001 * np.eye(len(self.df_lineups))
+        
+        return self.df_lineups
+
+    def enforce_exposures(self, var_multiple, n_lineups_to_optimize, verbose=False):
         player_dist = self.get_player_distribution(self.df_lineups)
         players = list(player_dist.index)
         lineup_mtx = self._get_lineup_mtx(players)
-        iterations = int(np.ceil(len(self.df_lineups) / 1000))
+        max_ = np.minimum(1000, len(self.df_lineups))
+        iterations = int(np.ceil(len(self.df_lineups) / max_))
         lineup_mtx = pd.concat((lineup_mtx.T, self.df_lineups[['mean', 'std']]), axis=1)
         self.results = []
         for k in range(iterations):
             exp = ExposureEnforcer(
-                lineup_mtx.iloc[1000 * k: 1000 * (k+1), :], 
-                1000 / iterations, self.df.loc[players], var_multiple)
+                lineup_mtx.iloc[max_ * k: max_ * (k+1), :], 
+                max_ / iterations, self.df.loc[players], var_multiple)
             self.results += exp.solve()
         
         idx = np.where(np.array(self.results).astype(int))[0]
         exp = ExposureEnforcer(
             lineup_mtx.iloc[idx, :], 
-            self.n_lineups_to_optimize, self.df.loc[players], var_multiple)
+            n_lineups_to_optimize, self.df.loc[players], var_multiple)
         self.result = exp.solve()
         self.df_optimal = self.df_lineups.loc[np.where(np.array(self.result).astype(int))[0]]
+        self.df_optimal.reset_index(0, inplace=True, drop=True)
+        return self.df_optimal
+
+    def enforce_exposures2(self, var_multiple, cov_penalty, n_lineups_to_optimize, verbose=False):
+        max_ = np.minimum(1000, len(self.df_lineups))
+        iterations = int(np.ceil(len(self.df_lineups) / max_))
+        self.results = []
+        for k in range(iterations):
+            exp = ExposureEnforcer2(
+                self.df_lineups.iloc[max_ * k: max_ * (k+1)]['mean'],
+                self.lineup_cov.iloc[max_ * k: max_ * (k+1), max_ * k: max_ * (k+1)], 
+                max_ / iterations, var_multiple, cov_penalty, continuous='all', verbose=verbose)
+            self.results += exp.solve()
+        
+        idx = np.argsort(-np.array(self.results))[:1000]
+        exp = ExposureEnforcer2(
+            self.df_lineups.iloc[idx]['mean'],
+            self.lineup_cov.iloc[idx, idx], n_lineups_to_optimize, 
+            var_multiple, cov_penalty, continuous='all', verbose=verbose)
+        self.result = exp.solve()
+        idx = np.argsort(-np.array(self.results))[:n_lineups_to_optimize]
+        self.df_optimal = self.df_lineups.loc[idx]
         self.df_optimal.reset_index(0, inplace=True, drop=True)
         return self.df_optimal
 
@@ -197,6 +242,96 @@ class ExposureEnforcer:
             lin_expr=[cplex.SparsePair(
                 ind=index, 
                 val=[1.0]*self.n_lineups)],
+            rhs=[self.n_lineups_to_optimize],
+            names=["lineup_limit"],
+            senses=["L"])
+
+    def solve(self):
+        self.lp.solve()
+        if self.lp.solution.is_primal_feasible():
+            self.result = self.lp.solution.get_values()
+        else:
+            self.result = "infeasible"
+
+        return self.result
+
+class ExposureEnforcer2:
+    
+    def __init__(
+        self, lineup_mean, lineup_cov, n_lineups_to_optimize, 
+        var_multiple, cov_penalty, continuous=None, time_limit=60, verbose=False):
+
+        self.lineup_mean = lineup_mean
+        self.lineup_cov = lineup_cov
+        self.n_lineups_to_optimize = n_lineups_to_optimize
+        self.var_multiple = var_multiple
+        self.cov_penalty = cov_penalty
+        self.continuous = continuous
+        if continuous is None:
+            self.continuous = []
+        elif continuous == 'all':
+            self.continuous = list(range(len(lineup_mean)))
+
+        self.time_limit = time_limit
+        self.verbose = verbose
+
+        self._provision_constraints_from_df()
+        self._construct_lp()
+
+    def _provision_constraints_from_df(self):
+        self.mean = self.lineup_mean.values
+        self.std = np.sqrt(np.diag(self.lineup_cov.values))
+        self.cov = self.lineup_cov.values
+        self.n_lineups = len(self.lineup_cov)
+
+    def _construct_lp(self):
+        self.lp = cplex.Cplex()
+        self.lp.parameters.timelimit.set(self.time_limit)
+        self._get_variables_and_objective()
+        self._get_constraints()
+        if not self.verbose:
+            self.lp.set_log_stream(None)
+            self.lp.set_error_stream(None)
+            self.lp.set_warning_stream(None)
+            self.lp.set_results_stream(None)
+
+    def _get_variables_and_objective(self):
+        for i in range(self.n_lineups):
+            self.lp.variables.add(
+                names=["x_" + str(i)], ub=[1.0])
+            self.lp.objective.set_linear(
+                "x_" + str(i), 
+                (self.mean[i] + \
+                    (self.cov_penalty + self.var_multiple) * self.std[i]) / \
+                        self.n_lineups_to_optimize)
+            if i in self.continuous:
+                var_type = self.lp.variables.type.continuous
+            else:
+                var_type = self.lp.variables.type.binary
+
+            self.lp.variables.set_types(
+                "x_" + str(i), var_type)
+            
+        
+        quadratics = []
+        for i in range(self.n_lineups):
+            for j in range(self.n_lineups):
+                if j > i:
+                    continue
+
+                quadratics += [(
+                    "x_" + str(i), "x_" + str(j),
+                    - self.cov_penalty * self.cov[i, j] / self.n_lineups_to_optimize
+                )]
+        self.lp.objective.set_quadratic_coefficients(quadratics)
+        self.lp.objective.set_sense(self.lp.objective.sense.maximize)
+
+    def _get_constraints(self):
+        index = ["x_" + str(i) for i in range(self.n_lineups)]
+        self.lp.linear_constraints.add(
+            lin_expr=[cplex.SparsePair(
+                ind=index, 
+                val=[1.0] * self.n_lineups)],
             rhs=[self.n_lineups_to_optimize],
             names=["lineup_limit"],
             senses=["L"])
