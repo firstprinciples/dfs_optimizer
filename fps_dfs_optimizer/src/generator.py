@@ -1,6 +1,7 @@
 from fps_dfs_optimizer.src.draftkings_tools import get_players_from_salaries
 import pandas as pd
 import numpy as np
+import time
 from scipy.stats import norm
 import cplex
 
@@ -25,9 +26,15 @@ class LineupGenerator:
         self.verbose = verbose
         self.df_lineups = pd.DataFrame(columns=self.POSITION_COLS)
 
-    def generate(self, n_lineups_to_generate):
-        self.n_lineups_to_generate = n_lineups_to_generate
-        self.df_lineups = pd.concat((self.df_lineups, self._generate()))     
+    def generate(self, n_lineups_to_generate=None, gen_time=None):
+        if n_lineups_to_generate is None:
+            n_lineups_to_generate = 10000
+        
+            if gen_time is None:
+                gen_time = 5
+
+        self.df_lineups = pd.concat((self.df_lineups, 
+            self._generate(n_lineups_to_generate, gen_time)))     
         self.df_lineups.drop_duplicates(inplace=True)
         self.df_lineups.reset_index(inplace=True, drop=True)
         return self.df_lineups
@@ -35,14 +42,20 @@ class LineupGenerator:
     def update_exp(self, path):
         self.df = get_players_from_salaries(path)
 
-    def _generate(self):
-        
+    def _generate(self, n_lineups_to_generate, gen_time):
+        if gen_time is None:
+            gen_time = 60
+        else:
+            self.duplicates_lim = 1E6
+
+        start_time = time.time()
         df_lineups = pd.DataFrame(columns=self.POSITION_COLS)
         duplicates = 0
         n_lineups = df_lineups.shape[0]
-        while (duplicates < self.duplicates_lim) & (n_lineups < self.n_lineups_to_generate):
+        run_time = time.time() - start_time
+        while (duplicates < self.duplicates_lim) & (n_lineups < n_lineups_to_generate) & (run_time / 60 < gen_time):
 
-            lineups_left = self.n_lineups_to_generate - n_lineups
+            lineups_left = n_lineups_to_generate - n_lineups
             if lineups_left < self.batch_size:
                 batch = lineups_left
             else:
@@ -70,6 +83,7 @@ class LineupGenerator:
             duplicates += (length - n_lineups)
             print('{} Lineups'.format(n_lineups))
             print('{} Duplicates'.format(duplicates))
+            run_time = time.time() - start_time
 
         df_lineups.reset_index(inplace=True, drop=True)
         return df_lineups
@@ -145,6 +159,7 @@ class LineupGenerator:
         iterations = int(np.ceil(len(self.df_lineups) / max_))
         self.results = []
         for k in range(iterations):
+            print('Iteration {} of {}'.format(k+1, iterations+1))
             exp = ExposureEnforcer2(
                 self.df_lineups.iloc[max_ * k: max_ * (k+1)]['mean'],
                 self.lineup_cov.iloc[max_ * k: max_ * (k+1), max_ * k: max_ * (k+1)], 
@@ -152,6 +167,7 @@ class LineupGenerator:
             self.results += exp.solve()
         
         idx = np.argsort(-np.array(self.results))[:1000]
+        print('Iteration {} of {}'.format(iterations+1, iterations+1))
         exp = ExposureEnforcer2(
             self.df_lineups.iloc[idx]['mean'],
             self.lineup_cov.iloc[idx, idx], n_lineups_to_optimize, 
