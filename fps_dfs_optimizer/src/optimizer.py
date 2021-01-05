@@ -181,14 +181,14 @@ class LineupOptimizer:
                 lin_expr=[cplex.SparsePair(
                     ind=index, 
                     val=self.guards)],
-                rhs=[4.0],
+                rhs=[3.0],
                 names=["guard_limit"],
                 senses=["G"])
             self.lp.linear_constraints.add(
                 lin_expr=[cplex.SparsePair(
                     ind=index, 
                     val=self.forwards)],
-                rhs=[4.0],
+                rhs=[3.0],
                 names=["forward_limit"],
                 senses=["G"])
 
@@ -240,11 +240,18 @@ class LineupOptimizer:
             else:
                 infeasibles += 1
             
-        print(str(infeasibles) + ' Infeasible lineups dropped')
         if len(sorted_lineups) > 0:
             self.df_sorted_lineups = pd.DataFrame(np.stack(sorted_lineups), columns=self.POSITION_COLS)
             self.df_sorted_lineups.drop_duplicates(inplace=True)
             self.df_sorted_lineups.reset_index(0, inplace=True, drop=True)
+            redundant = len(sorted_lineups) - len(self.df_sorted_lineups)
+        else:
+            df_sorted_lineups = pd.DataFrame()
+            redundant = 0
+
+        print('{} infeasible and {} redundant lineups dropped during sorting'.format(
+            infeasibles, redundant
+        ))
         return self.df_sorted_lineups
 
 

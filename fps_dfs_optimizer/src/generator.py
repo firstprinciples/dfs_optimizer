@@ -17,7 +17,7 @@ class LineupGenerator:
         drop_fraction=0.5, time_limit=1, 
         duplicates_lim=100, verbose=False):
 
-        self.df = df
+        self.df = df[df['max_exp'] > 0]
         self.n_players = len(self.df)
         self.batch_size = batch_size
         self.drop_fraction = drop_fraction
@@ -59,7 +59,8 @@ class LineupGenerator:
             if lineups_left < self.batch_size:
                 batch = lineups_left
             else:
-                batch = self.batch_size
+                rand = np.random.choice(self.batch_size // 2)
+                batch = rand + self.batch_size // 2
             
             keep_idx = np.random.choice(
                 self.n_players, 
@@ -75,6 +76,7 @@ class LineupGenerator:
             if optimizer.result == 'infeasible':
                 print('batch infeasible')
                 continue
+
             lineups = optimizer.sort_lineups()
             df_lineups = pd.concat((df_lineups, lineups))
             length = len(df_lineups)
