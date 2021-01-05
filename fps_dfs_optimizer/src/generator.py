@@ -196,15 +196,16 @@ class LineupGenerator:
         
             idx = np.argsort(-np.array(self.results))[:1000]
         else:
-            idx = np.random.choice(len(self.df_lineups), size=max_, replace=False)
+            idx = np.arange(max_)
 
-        print('Iteration {} of {}'.format(iterations+1, iterations+1))
+        if iterations > 1:
+            print('Iteration {} of {}'.format(iterations+1, iterations+1))
         exp = ExposureEnforcerAuto(
             self.df_lineups.iloc[idx]['mean'],
             self.lineup_cov.iloc[idx, idx], n_lineups_to_optimize, 
             var_multiple, cov_penalty, continuous='all', verbose=verbose)
         self.result = exp.solve()
-        idx = np.argsort(-np.array(self.results))[:n_lineups_to_optimize]
+        idx = np.argsort(-np.array(self.result))[:n_lineups_to_optimize]
         self.df_optimal = self.df_lineups.loc[idx]
         self.df_optimal.reset_index(0, inplace=True, drop=True)
         return self.df_optimal
