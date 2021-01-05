@@ -170,7 +170,7 @@ class LineupGenerator:
         self.df_optimal.reset_index(0, inplace=True, drop=True)
         return self.df_optimal
 
-    def enforce_exposures2(self, var_multiple, cov_penalty, n_lineups_to_optimize, verbose=False):
+    def enforce_exposures_auto(self, var_multiple, cov_penalty, n_lineups_to_optimize, verbose=False):
         max_ = np.minimum(1000, len(self.df_lineups))
         iterations = int(np.ceil(len(self.df_lineups) / max_))
         self.results = []
@@ -284,9 +284,6 @@ class ExposureEnforcer:
                 rhs=[self.max_exp[j]],
                 names=["exp_limit_high_"+str(j)],
                 senses=["L"])
-        
-        print(self.n_lineups)
-        print(self.n_lineups_to_optimize)
         self.lp.linear_constraints.add(
             lin_expr=[cplex.SparsePair(
                 ind=index, 

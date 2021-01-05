@@ -246,7 +246,7 @@ class LineupOptimizer:
             self.df_sorted_lineups.reset_index(0, inplace=True, drop=True)
             redundant = len(sorted_lineups) - len(self.df_sorted_lineups)
         else:
-            df_sorted_lineups = pd.DataFrame()
+            self.df_sorted_lineups = pd.DataFrame()
             redundant = 0
 
         print('{} infeasible and {} redundant lineups dropped during sorting'.format(
