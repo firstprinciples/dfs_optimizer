@@ -69,7 +69,7 @@ class LineupGenerator:
             keep_idx = np.unique(np.append(keep_idx, keep))
             df = self.df.iloc[keep_idx]
             df['max_exp'] = df['max_exp'] * (1 + self.drop_fraction)
-            df['min_exp'] = df['min_exp'] * (1 + self.drop_fraction)
+            df['min_exp'] = df['min_exp'] * (min(1, 1 + self.drop_fraction))
             optimizer = LineupOptimizer(df, batch, order=False, time_limit=self.time_limit, verbose=self.verbose)
             optimizer.solve()
             if optimizer.result == 'infeasible':
@@ -139,16 +139,20 @@ class LineupGenerator:
         iterations = int(np.ceil(len(self.df_lineups) / max_))
         lineup_mtx = pd.concat((lineup_mtx.T, self.df_lineups[['mean', 'std']]), axis=1)
         self.results = []
-        for k in range(iterations):
-            exp = ExposureEnforcer(
-                lineup_mtx.iloc[max_ * k: max_ * (k+1), :], 
-                max_ / iterations, self.df.loc[players], var_multiple)
-            self.results += exp.solve()
+        if iterations > 1:
+            for k in range(iterations):
+                exp = ExposureEnforcer(
+                    lineup_mtx.iloc[max_ * k: max_ * (k+1), :], 
+                    max_ / iterations, self.df.loc[players], var_multiple, verbose=verbose)
+                self.results += exp.solve()
         
-        idx = np.where(np.array(self.results).astype(int))[0]
+            idx = np.where(np.array(self.results).astype(int))[0]
+        else:
+            idx = np.arange(len(self.df_lineups))
+
         exp = ExposureEnforcer(
             lineup_mtx.iloc[idx, :], 
-            n_lineups_to_optimize, self.df.loc[players], var_multiple)
+            n_lineups_to_optimize, self.df.loc[players], var_multiple, verbose=verbose)
         self.result = exp.solve()
         self.df_optimal = self.df_lineups.loc[np.where(np.array(self.result).astype(int))[0]]
         self.df_optimal.reset_index(0, inplace=True, drop=True)
@@ -158,15 +162,19 @@ class LineupGenerator:
         max_ = np.minimum(1000, len(self.df_lineups))
         iterations = int(np.ceil(len(self.df_lineups) / max_))
         self.results = []
-        for k in range(iterations):
-            print('Iteration {} of {}'.format(k+1, iterations+1))
-            exp = ExposureEnforcer2(
-                self.df_lineups.iloc[max_ * k: max_ * (k+1)]['mean'],
-                self.lineup_cov.iloc[max_ * k: max_ * (k+1), max_ * k: max_ * (k+1)], 
-                max_ / iterations, var_multiple, cov_penalty, continuous='all', verbose=verbose)
-            self.results += exp.solve()
+        if iterations > 1:
+            for k in range(iterations):
+                print('Iteration {} of {}'.format(k+1, iterations+1))
+                exp = ExposureEnforcer2(
+                    self.df_lineups.iloc[max_ * k: max_ * (k+1)]['mean'],
+                    self.lineup_cov.iloc[max_ * k: max_ * (k+1), max_ * k: max_ * (k+1)], 
+                    max_ / iterations, var_multiple, cov_penalty, continuous='all', verbose=verbose)
+                self.results += exp.solve()
         
-        idx = np.argsort(-np.array(self.results))[:1000]
+            idx = np.argsort(-np.array(self.results))[:1000]
+        else:
+            idx = np.arange(len(self.df_lineups))
+
         print('Iteration {} of {}'.format(iterations+1, iterations+1))
         exp = ExposureEnforcer2(
             self.df_lineups.iloc[idx]['mean'],
@@ -267,6 +275,7 @@ class ExposureEnforcer:
         if self.lp.solution.is_primal_feasible():
             self.result = self.lp.solution.get_values()
         else:
+            print('Exposure enforcement is infeasible with the current lineups.')
             self.result = "infeasible"
 
         return self.result
