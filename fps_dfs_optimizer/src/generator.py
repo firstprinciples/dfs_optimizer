@@ -141,9 +141,9 @@ class LineupGenerator:
         iterations = int(np.ceil(len(self.df_lineups) / max_))
         lineup_mtx = pd.concat((lineup_mtx.T, self.df_lineups[['mean', 'std']]), axis=1)
         self.results = []
-        frac_to_select = 1000 / ((iterations - 1) * 1000 + len(self.df_lineups) % 1000)
-        frac_to_select = min(0.3, frac_to_select)
         if iterations > 1:
+            frac_to_select = 1000 / ((iterations - 1) * 1000 + len(self.df_lineups) % 1000)
+            frac_to_select = min(0.3, frac_to_select)
             for k in range(iterations):
                 iter_lineupmtx = lineup_mtx.iloc[max_ * k: max_ * (k+1), :]
                 n_to_select = frac_to_select * len(iter_lineupmtx)
@@ -174,14 +174,14 @@ class LineupGenerator:
         max_ = np.minimum(1000, len(self.df_lineups))
         iterations = int(np.ceil(len(self.df_lineups) / max_))
         self.results = []
-        frac_to_select = 1000 / ((iterations - 1) * 1000 + len(self.df_lineups) % 1000)
-        frac_to_select = min(0.3, frac_to_select)
         if iterations > 1:
+            frac_to_select = 1000 / ((iterations - 1) * 1000 + len(self.df_lineups) % 1000)
+            frac_to_select = min(0.3, frac_to_select)
             for k in range(iterations):
                 print('Iteration {} of {}'.format(k+1, iterations+1))
                 iter_df_lineups = self.df_lineups.iloc[max_ * k: max_ * (k+1)]
                 n_to_select = frac_to_select * len(iter_df_lineups)
-                exp = ExposureEnforcer2(
+                exp = ExposureEnforcerAuto(
                     iter_df_lineups['mean'],
                     self.lineup_cov.iloc[
                         max_ * k: max_ * (k+1), max_ * k: max_ * (k+1)
@@ -199,7 +199,7 @@ class LineupGenerator:
             idx = np.random.choice(len(self.df_lineups), size=max_, replace=False)
 
         print('Iteration {} of {}'.format(iterations+1, iterations+1))
-        exp = ExposureEnforcer2(
+        exp = ExposureEnforcerAuto(
             self.df_lineups.iloc[idx]['mean'],
             self.lineup_cov.iloc[idx, idx], n_lineups_to_optimize, 
             var_multiple, cov_penalty, continuous='all', verbose=verbose)
@@ -302,7 +302,7 @@ class ExposureEnforcer:
 
         return self.result
 
-class ExposureEnforcer2:
+class ExposureEnforcerAuto:
     
     def __init__(
         self, lineup_mean, lineup_cov, n_lineups_to_optimize, 
