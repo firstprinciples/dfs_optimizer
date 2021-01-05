@@ -270,12 +270,6 @@ class ExposureEnforcer:
     def _get_constraints(self):
         index = ["x_" + str(i) for i in range(self.n_lineups)]
         for j in range(self.n_players):
-            print(self.players[j])
-            print(self.min_exp[j])
-            print(self.max_exp[j])
-            print(
-                np.sum(self.lineup_mtx.loc[:, self.players[j]].values)
-            )
             self.lp.linear_constraints.add(
                 lin_expr=[cplex.SparsePair(
                     ind=index, 
