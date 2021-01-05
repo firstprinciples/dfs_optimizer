@@ -139,16 +139,26 @@ class LineupGenerator:
         iterations = int(np.ceil(len(self.df_lineups) / max_))
         lineup_mtx = pd.concat((lineup_mtx.T, self.df_lineups[['mean', 'std']]), axis=1)
         self.results = []
+        frac_to_select = 1000 / ((iterations - 1) * 1000 + len(self.df_lineups) % 1000)
+        frac_to_select = min(0.3, frac_to_select)
         if iterations > 1:
             for k in range(iterations):
+                iter_lineupmtx = lineup_mtx.iloc[max_ * k: max_ * (k+1), :]
+                n_to_select = frac_to_select * len(iter_lineupmtx)
                 exp = ExposureEnforcer(
-                    lineup_mtx.iloc[max_ * k: max_ * (k+1), :], 
-                    max_ / iterations, self.df.loc[players], var_multiple, verbose=verbose)
-                self.results += exp.solve()
+                    iter_lineupmtx, round(n_to_select), 
+                    self.df.loc[players], var_multiple, verbose=verbose
+                )
+                result = exp.solve()
+                if result == 'infeasible':
+                    continue
+                else:
+                    self.results += result
         
-            idx = np.where(np.array(self.results).astype(int))[0]
+            # idx = np.where(np.array(self.results).astype(int))[0]
+            idx = np.argsort(-np.array(self.results))[:1000]
         else:
-            idx = np.arange(len(self.df_lineups))
+            idx = np.random.choice(len(self.df_lineups), size=max_, replace=False)
 
         exp = ExposureEnforcer(
             lineup_mtx.iloc[idx, :], 
@@ -162,18 +172,29 @@ class LineupGenerator:
         max_ = np.minimum(1000, len(self.df_lineups))
         iterations = int(np.ceil(len(self.df_lineups) / max_))
         self.results = []
+        frac_to_select = 1000 / ((iterations - 1) * 1000 + len(self.df_lineups) % 1000)
+        frac_to_select = min(0.3, frac_to_select)
         if iterations > 1:
             for k in range(iterations):
                 print('Iteration {} of {}'.format(k+1, iterations+1))
+                iter_df_lineups = self.df_lineups.iloc[max_ * k: max_ * (k+1)]
+                n_to_select = frac_to_select * len(iter_df_lineups)
                 exp = ExposureEnforcer2(
-                    self.df_lineups.iloc[max_ * k: max_ * (k+1)]['mean'],
-                    self.lineup_cov.iloc[max_ * k: max_ * (k+1), max_ * k: max_ * (k+1)], 
-                    max_ / iterations, var_multiple, cov_penalty, continuous='all', verbose=verbose)
-                self.results += exp.solve()
+                    iter_df_lineups['mean'],
+                    self.lineup_cov.iloc[
+                        max_ * k: max_ * (k+1), max_ * k: max_ * (k+1)
+                    ], 
+                    round(n_to_select), var_multiple, 
+                    cov_penalty, continuous='all', verbose=verbose)
+                result = exp.solve()
+                if result == 'infeasible':
+                    continue
+                else:
+                    self.results += result
         
             idx = np.argsort(-np.array(self.results))[:1000]
         else:
-            idx = np.arange(len(self.df_lineups))
+            idx = np.random.choice(len(self.df_lineups), size=max_, replace=False)
 
         print('Iteration {} of {}'.format(iterations+1, iterations+1))
         exp = ExposureEnforcer2(
@@ -247,6 +268,12 @@ class ExposureEnforcer:
     def _get_constraints(self):
         index = ["x_" + str(i) for i in range(self.n_lineups)]
         for j in range(self.n_players):
+            print(self.players[j])
+            print(self.min_exp[j])
+            print(self.max_exp[j])
+            print(
+                np.sum(self.lineup_mtx.loc[:, self.players[j]].values)
+            )
             self.lp.linear_constraints.add(
                 lin_expr=[cplex.SparsePair(
                     ind=index, 
@@ -262,6 +289,8 @@ class ExposureEnforcer:
                 names=["exp_limit_high_"+str(j)],
                 senses=["L"])
         
+        print(self.n_lineups)
+        print(self.n_lineups_to_optimize)
         self.lp.linear_constraints.add(
             lin_expr=[cplex.SparsePair(
                 ind=index, 
