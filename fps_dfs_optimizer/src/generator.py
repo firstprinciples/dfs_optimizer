@@ -71,7 +71,10 @@ class LineupGenerator:
             df = self.df.iloc[keep_idx]
             df['max_exp'] = df['max_exp'] * (1 + self.drop_fraction)
             df['min_exp'] = df['min_exp'] * (min(1, 1 + self.drop_fraction))
-            optimizer = LineupOptimizer(df, batch, order=False, time_limit=self.time_limit, verbose=self.verbose)
+            optimizer = LineupOptimizer(
+                df, batch, order=False, 
+                time_limit=self.time_limit, verbose=self.verbose
+            )
             optimizer.solve()
             if optimizer.result == 'infeasible':
                 print('batch infeasible')
@@ -83,9 +86,12 @@ class LineupGenerator:
             df_lineups.drop_duplicates(inplace=True)
             n_lineups = len(df_lineups)
             duplicates += (length - n_lineups)
-            print('{} Lineups'.format(n_lineups))
-            print('{} Duplicates'.format(duplicates))
             run_time = time.time() - start_time
+            print('\n')
+            print('Elapsed time: {:0.2f} minutes\nLineups created: {}\nDuplicates removed: {}'.format(
+                run_time/60, n_lineups, duplicates
+            ))
+            print('\n')
 
         df_lineups.reset_index(inplace=True, drop=True)
         return df_lineups
