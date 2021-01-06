@@ -188,6 +188,13 @@ class EntriesHandler:
             if any(self.df['dk_point_actual'].values > 0):
                 df_entries_out = self.df_entries[self.POSITION_COLS]
                 df_entries_out['dk_points_actual'] = self.df_entries['dk_points_actual']
+            else:
+                df_entries_out = pd.DataFrame(columns=self.POSITION_COLS)
+                for col in self.POSITION_COLS:
+                    df_entries_out[col] = self.df_entries[col].map(self.exit_map)
+            
+                df_entries_out = pd.concat(
+                    (self.df_entries[self.ENTRIES_COLS], df_entries_out), axis=1)
         else:
             df_entries_out = pd.DataFrame(columns=self.POSITION_COLS)
             for col in self.POSITION_COLS:
