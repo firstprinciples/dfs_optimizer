@@ -1,3 +1,4 @@
+from os import write
 import pandas as pd
 import numpy as np
 import datetime as dt
@@ -170,8 +171,10 @@ class EntriesHandler:
         self.df_sheet_lineups.reset_index(0, inplace=True, drop=True)
         self.df_entries = pd.concat(
             (self.df_entries[self.ENTRIES_COLS], self.df_sheet_lineups), axis=1)
+        write_actual = False
         if 'dk_points_actual' in self.df.columns:
             if any(self.df['dk_point_actual'].values > 0):
+                write_actual = True
                 name_to_actual_dict = self.df['dk_points_actual'].to_dict()
                 df_points = pd.DataFrame(
                     columns=self.POSITION_COLS, 
@@ -181,20 +184,12 @@ class EntriesHandler:
                     df_points[col] = self.df_entries[col].map(name_to_actual_dict)
                 self.df_entries['dk_points_actual'] = df_points.sum(axis=1)
 
-        self._write_entries_to_csv(version=version)
+        self._write_entries_to_csv(version=version, write_actual=write_actual)
 
-    def _write_entries_to_csv(self, version=2):
-        if 'dk_points_actual' in self.df.columns:
-            if any(self.df['dk_point_actual'].values > 0):
-                df_entries_out = self.df_entries[self.POSITION_COLS]
-                df_entries_out['dk_points_actual'] = self.df_entries['dk_points_actual']
-            else:
-                df_entries_out = pd.DataFrame(columns=self.POSITION_COLS)
-                for col in self.POSITION_COLS:
-                    df_entries_out[col] = self.df_entries[col].map(self.exit_map)
-            
-                df_entries_out = pd.concat(
-                    (self.df_entries[self.ENTRIES_COLS], df_entries_out), axis=1)
+    def _write_entries_to_csv(self, version=2, write_actual=False):
+        if write_actual:
+            df_entries_out = self.df_entries[self.POSITION_COLS]
+            df_entries_out['dk_points_actual'] = self.df_entries['dk_points_actual']
         else:
             df_entries_out = pd.DataFrame(columns=self.POSITION_COLS)
             for col in self.POSITION_COLS:
@@ -202,7 +197,7 @@ class EntriesHandler:
         
             df_entries_out = pd.concat(
                 (self.df_entries[self.ENTRIES_COLS], df_entries_out), axis=1)
-
+        
         df_entries_out.to_csv(
             self.entries_path[:-4] + \
                 '_' + str(version) + '.csv', index=False)
