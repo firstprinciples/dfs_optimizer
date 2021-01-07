@@ -173,7 +173,7 @@ class EntriesHandler:
             (self.df_entries[self.ENTRIES_COLS], self.df_sheet_lineups), axis=1)
         write_actual = False
         if 'dk_points_actual' in self.df.columns:
-            if any(self.df['dk_point_actual'].values > 0):
+            if any(self.df['dk_points_actual'].values > 0):
                 write_actual = True
                 name_to_actual_dict = self.df['dk_points_actual'].to_dict()
                 df_points = pd.DataFrame(
