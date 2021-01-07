@@ -37,6 +37,7 @@ class LineupGenerator:
             self._generate(n_lineups_to_generate, gen_time)))     
         self.df_lineups.drop_duplicates(inplace=True)
         self.df_lineups.reset_index(inplace=True, drop=True)
+        self._get_lineup_salaries()
         return self.df_lineups
 
     def update_exp(self, path):
@@ -136,7 +137,6 @@ class LineupGenerator:
         lineup_sims_norm = lineup_sims - lineup_sims.mean(axis=0)
         self.lineup_cov = (lineup_sims_norm.T @ lineup_sims_norm) / sims + \
             0.001 * np.eye(len(self.df_lineups))
-        
         return self.df_lineups
 
     def enforce_exposures(self, var_multiple, n_lineups_to_optimize, verbose=False):
@@ -215,6 +215,18 @@ class LineupGenerator:
         self.df_optimal = self.df_lineups.loc[idx]
         self.df_optimal.reset_index(0, inplace=True, drop=True)
         return self.df_optimal
+
+    def _get_lineup_salaries(self):
+        self.df.index = self.df.Name
+        df_sal = pd.DataFrame(
+            columns=self.POSITION_COLS,
+            index=self.df_lineups.index
+        )
+        for col in self.POSITION_COLS:
+            df_sal[col] = self.df_lineups[col].map(
+                self.df['Salary'].to_dict()
+            )
+        self.df_lineups['salary'] = df_sal.sum(axis=1)
 
     def _get_lineup_mtx(self, players=None):
         if players is None:
