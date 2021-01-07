@@ -122,7 +122,7 @@ class EntriesHandler:
         df_entries.dropna(axis=0, how='all', inplace=True)
         df_entries.fillna(0, inplace=True)
         df_entries[['Entry ID', 'Contest ID']] = \
-            df_entries[['Entry ID', 'Contest ID']].astype(int)
+            df_entries[['Entry ID', 'Contest ID']].astype(np.int64)
         self.df_entries = df_entries
 
     def _make_id_map_dicts(self):
@@ -140,6 +140,7 @@ class EntriesHandler:
         self.locked_to_name_dict = {
             str_ + ' (LOCKED)' : name + ' (LOCKED)' \
                 for (str_, name) in self.str_to_name_dict.items()}
+        self.name_to_sal_dict = self.df['Salary'].to_dict()
         self.entry_map = dict(
             list(self.id_to_name_dict.items()) + \
                 list(self.str_to_name_dict.items()) + \
@@ -171,6 +172,13 @@ class EntriesHandler:
         self.df_sheet_lineups.reset_index(0, inplace=True, drop=True)
         self.df_entries = pd.concat(
             (self.df_entries[self.ENTRIES_COLS], self.df_sheet_lineups), axis=1)
+        df_sal = pd.DataFrame(
+            columns=self.POSITION_COLS,
+            index=self.df_entries.index
+        )
+        for col in self.POSITION_COLS:
+            df_sal[col] = self.df_entries[col].map(self.name_to_sal_dict)
+        self.df_entries['salary'] = df_sal.sum(axis=1)
         write_actual = False
         if 'dk_points_actual' in self.df.columns:
             if any(self.df['dk_points_actual'].values > 0):
@@ -190,6 +198,7 @@ class EntriesHandler:
         if write_actual:
             df_entries_out = self.df_entries[self.POSITION_COLS]
             df_entries_out['dk_points_actual'] = self.df_entries['dk_points_actual']
+            df_entries_out['salary'] = self.df_entries['salary']
         else:
             df_entries_out = pd.DataFrame(columns=self.POSITION_COLS)
             for col in self.POSITION_COLS:
