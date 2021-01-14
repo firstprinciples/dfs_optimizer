@@ -224,6 +224,11 @@ class LineupOptimizer:
         infeasibles = 0
         for j in range(self.n_lineups):
             idx = np.where(self.result[:, j])[0]
+            n_games = len(self.df.loc[idx, 'Game'].unique())
+            if n_games < 2:
+                infeasibles += 1
+                continue
+            
             players = self.df.loc[idx, 'Name'].values
             tip_times = self.tip_times[idx]
             positions = np.concatenate((
