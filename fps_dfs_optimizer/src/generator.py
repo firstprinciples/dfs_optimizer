@@ -26,6 +26,12 @@ class LineupGenerator:
         self.verbose = verbose
         self.df_lineups = pd.DataFrame(columns=self.POSITION_COLS)
 
+    def generate_n_lineups(self, n_lineups_to_generate):
+        return self.generate(n_lineups_to_generate=n_lineups_to_generate)
+
+    def generate_n_minutes(self, gen_time):
+        return self.generate(gen_time=gen_time)
+
     def generate(self, n_lineups_to_generate=None, gen_time=None):
         if n_lineups_to_generate is None:
             n_lineups_to_generate = 10000
