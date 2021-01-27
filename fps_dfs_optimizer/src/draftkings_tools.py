@@ -90,9 +90,11 @@ def read_game(x):
     away, home = game.split('@')
     return away + ' @ ' + home
 
-def get_players_from_salaries(path):
+def get_players_from_salaries(path, tz='US/Eastern'):
     df = pd.read_csv(path)
     df['Time'] = pd.to_datetime(df['Game Info'].apply(read_date))
+    df['Time'] = df['Time'].dt.tz_localize(tz=tz)
+    df['Time'] = df['Time'].dt.tz_convert(tz='UTC')
     df['Game'] = df['Game Info'].apply(read_game)
     cols_out = ['Name', 'ID', 'Position', 'Salary', 'Game', 'Time', 'TeamAbbrev']
     optional_cols = ['projections', 'std', 'min_exp', 'max_exp', 'dk_points_actual']
@@ -154,6 +156,7 @@ class EntriesHandler:
         df_sheet_lineups = pd.DataFrame(columns=self.POSITION_COLS)
         for col in self.POSITION_COLS:
             df_sheet_lineups[col] = self.df_entries[col].map(self.entry_map)
+
         df_sheet_lineups.dropna(axis=0, how='any', inplace=True)
         df_sheet_lineups.reset_index(0, drop=True, inplace=True)
         self.df_sheet_lineups = df_sheet_lineups

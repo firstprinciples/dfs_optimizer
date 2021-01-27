@@ -365,10 +365,10 @@ class Reoptimizer:
         self._get_model_data()
         self._create_instance()
         self._get_optimizer(use_time_lim=False)
-
+        self.iterations = 0
         self.df_optimal = copy.deepcopy(self.df_locked)
 
-    def solve(self):
+    def solve(self, iter_lim=20):
         self.open_slots = (self.df_locked==0).sum().sum()
         print('Unfilled spots remaining: {}'.format(self.open_slots))
         if self.visualize:
@@ -377,7 +377,7 @@ class Reoptimizer:
             plt.show()
         
         while self.open_slots > 0:
-            self._iterate_opt()
+            self._iterate_opt(iter_lim=iter_lim)
             self._get_optimizer()
             self.open_slots = (self.df_optimal==0).sum().sum()
             print('Unfilled spots remaining: {}'.format(self.open_slots))
@@ -385,25 +385,22 @@ class Reoptimizer:
                 plt.imshow((self.df_optimal==0).T)
                 plt.show()
 
-    def _iterate_opt(self):
+    def _iterate_opt(self, iter_lim=20):
         self.opt.solve(self.instance, tee=self.verbose)
-        cutoff = np.minimum(0.6, np.maximum(0.001, (0.599/90 * (self.open_slots - 130) + 0.6)))
+        self.iterations += 1
+        cutoff = np.maximum(0.01, 1 - self.iterations * 0.05)
+        # cutoff = np.minimum(0.6, np.maximum(0.001, (0.599/90 * (self.open_slots - 130) + 0.6)))
         self.binaries = 0
-        # self.fixed = 0
-        # rands = np.random.choice(self.fixed_last, size=10, replace=False)
-        # j = 0
+        if self.iterations > iter_lim:
+            assignment_val = 0.5
+        else:
+            assignment_val = 1.0
+
         for n, p, l in self.npl_set:
-            if self.instance.assignment_npl[(n, p, l)].value == 1.0:
+            if self.instance.assignment_npl[(n, p, l)].value >= assignment_val:
                 self.df_optimal.loc[int(l[2:]), p] = n
                 self.instance.assignment_npl[(n, p, l)].domain = pyo.UnitInterval
                 self.instance.assignment_npl[(n, p, l)].fix(1.0)
-                # j += 1
-                # if j in rands:
-                #     self.instance.assignment_npl[(n, p, l)].fixed = False
-                #     self.df_optimal.loc[int(l[2:]), p] = 0
-                # else:
-                #     self.fixed += 1
-                    
             elif self.instance.assignment_npl[(n, p, l)].value >= cutoff:
                 self.instance.assignment_npl[(n, p, l)].domain = pyo.Binary
                 self.binaries += 1
@@ -411,10 +408,9 @@ class Reoptimizer:
                 self.instance.assignment_npl[(n, p, l)].fixed = False
 
         #if self.verbose:
+        print('\n')
         print('Cutoff set to {}; {} variables converted to binaries'.format(cutoff, self.binaries))
-
-        # self.fixed_last = copy.deepcopy(self.fixed)
-        # print('Fixed last: {}'.format(self.fixed_last))
+        print('\n')
 
     def _get_optimizer(self, use_time_lim=True):
         if self.executable is None:
@@ -490,7 +486,7 @@ class Reoptimizer:
 
     def _get_model_params(self):
         # start times
-        time_start = pd.Series([t.hour * 60 + t.minute \
+        time_start = pd.Series([t.hour * 60 + t.minute + np.random.choice(5) \
             for t in self.df.Time[self.unlocked]], index=self.unlocked)
         time_start_norm = (time_start - time_start.min()) / (time_start.max() - time_start.min())
         self.start_times_n = time_start_norm.to_dict()

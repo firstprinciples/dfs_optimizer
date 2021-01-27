@@ -169,7 +169,6 @@ class LineupGenerator:
                 else:
                     self.results += result
         
-            # idx = np.where(np.array(self.results).astype(int))[0]
             idx = np.argsort(-np.array(self.results))[:1000]
         else:
             idx = np.random.choice(len(self.df_lineups), size=max_, replace=False)
