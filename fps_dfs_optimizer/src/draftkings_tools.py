@@ -97,10 +97,11 @@ def get_players_from_salaries(path, tz='US/Eastern'):
     df['Time'] = df['Time'].dt.tz_convert(tz='UTC')
     df['Game'] = df['Game Info'].apply(read_game)
     cols_out = ['Name', 'ID', 'Position', 'Salary', 'Game', 'Time', 'TeamAbbrev']
-    optional_cols = ['projections', 'std', 'min_exp', 'max_exp', 'dk_points_actual']
+    optional_cols = ['projections', 'std', 'min_exp', 'max_exp', 'dk_points_actual', 'reopt']
     for col in optional_cols:
         if col in df.columns:
             cols_out += [col]
+
     return df[cols_out]
 
 class EntriesHandler:
@@ -223,6 +224,7 @@ class EntriesHandler:
         current_exp = self.get_player_distribution(self.df_sheet_lineups)
         self.df['max_exp'] = self.buffer
         self.df.loc[current_exp.index, 'max_exp'] += current_exp.values
+        self.df.loc[:, 'max_exp'] = np.minimum(1.0, self.df['max_exp'])
 
     def map_to_col(self, col):
         return self.df_sheet_lineups.apply(lambda x: self._col_mapper(x, self.df[col]))

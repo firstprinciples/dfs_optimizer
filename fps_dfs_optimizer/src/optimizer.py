@@ -385,11 +385,22 @@ class Reoptimizer:
                 plt.imshow((self.df_optimal==0).T)
                 plt.show()
 
+    def summarize(self):
+        df_reopt_summary = pd.concat((
+            self.entries.get_player_distribution(self.entries.df_sheet_lineups), 
+            self.entries.get_player_distribution(self.df_optimal)), axis=1)
+        df_reopt_summary.columns = ['Before', 'After']
+        df_reopt_summary.fillna(0, inplace=True)
+        df_reopt_summary['Difference'] = df_reopt_summary['After'] - df_reopt_summary['Before']
+        df_reopt_summary['Magnitude'] = np.absolute(df_reopt_summary['Difference'])
+        df_reopt_summary.sort_values(by='Magnitude', ascending=False, inplace=True)
+        df_reopt_summary.drop('Magnitude', axis=1, inplace=True)
+        return df_reopt_summary
+
     def _iterate_opt(self, iter_lim=20):
         self.opt.solve(self.instance, tee=self.verbose)
         self.iterations += 1
         cutoff = np.maximum(0.01, 1 - self.iterations * 0.05)
-        # cutoff = np.minimum(0.6, np.maximum(0.001, (0.599/90 * (self.open_slots - 130) + 0.6)))
         self.binaries = 0
         if self.iterations > iter_lim:
             assignment_val = 0.5
@@ -429,10 +440,26 @@ class Reoptimizer:
 
     def _get_locked_matrix(self):
         self.df_locked = pd.DataFrame(columns=self.entries.POSITION_COLS, index=self.df_lineups.index)
+        if 'reopt' in self.df.columns:
+            unlocked_lineups = []
+            reopt_players = list(self.df.index[self.df['reopt']==1])
+            for lineup in self.df_lineups.index:
+                for col in self.entries.POSITION_COLS:
+                    player = self.df_lineups.loc[lineup, col]
+                    if player in reopt_players:
+                        unlocked_lineups += [lineup]
+                        break
+
+            locked_lineups = set(self.df_lineups.index).difference(set(unlocked_lineups))
+        else:
+            locked_lineups = []
+        
         for lineup in self.df_lineups.index:
             for col in self.entries.POSITION_COLS:
                 player = self.df_lineups.loc[lineup, col]
                 if self.df.loc[player, 'locked']:
+                    self.df_locked.loc[lineup, col] = player
+                elif lineup in locked_lineups:
                     self.df_locked.loc[lineup, col] = player
                 else:
                     self.df_locked.loc[lineup, col] = 0
