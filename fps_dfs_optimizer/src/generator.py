@@ -26,13 +26,13 @@ class LineupGenerator:
         self.verbose = verbose
         self.df_lineups = pd.DataFrame(columns=self.POSITION_COLS)
 
-    def generate_n_lineups(self, n_lineups_to_generate):
-        return self.generate(n_lineups_to_generate=n_lineups_to_generate)
+    def generate_n_lineups(self, n_lineups_to_generate, order=False):
+        return self.generate(n_lineups_to_generate=n_lineups_to_generate, order=order)
 
-    def generate_n_minutes(self, gen_time):
-        return self.generate(gen_time=gen_time)
+    def generate_n_minutes(self, gen_time, order=False):
+        return self.generate(gen_time=gen_time, order=order)
 
-    def generate(self, n_lineups_to_generate=None, gen_time=None):
+    def generate(self, n_lineups_to_generate=None, gen_time=None, order=False):
         if n_lineups_to_generate is None:
             n_lineups_to_generate = 10000
         
@@ -40,7 +40,7 @@ class LineupGenerator:
                 gen_time = 5
 
         self.df_lineups = pd.concat((self.df_lineups, 
-            self._generate(n_lineups_to_generate, gen_time)))     
+            self._generate(n_lineups_to_generate, gen_time, order)))     
         self.df_lineups.drop_duplicates(inplace=True)
         self.df_lineups.reset_index(inplace=True, drop=True)
         self._get_lineup_salaries()
@@ -49,7 +49,7 @@ class LineupGenerator:
     def update_exp(self, path):
         self.df = get_players_from_salaries(path)
 
-    def _generate(self, n_lineups_to_generate, gen_time):
+    def _generate(self, n_lineups_to_generate, gen_time, order):
         if gen_time is None:
             gen_time = 60
         else:
@@ -78,8 +78,13 @@ class LineupGenerator:
             df = self.df.iloc[keep_idx]
             df['max_exp'] = df['max_exp'] * (1 + self.drop_fraction)
             df['min_exp'] = df['min_exp'] * (min(1, 1 + self.drop_fraction))
+            if order is None:
+                batch_order = bool(np.random.choice(2))
+            else:
+                batch_order = order
+                
             optimizer = LineupOptimizer(
-                df, batch, order=False, 
+                df, batch, order=batch_order, 
                 time_limit=self.time_limit, verbose=self.verbose
             )
             optimizer.solve()
