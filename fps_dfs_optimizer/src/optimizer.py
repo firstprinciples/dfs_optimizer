@@ -66,9 +66,10 @@ class LineupOptimizer:
     PLAYERS = 8.0
     POSITION_COLS = ['PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL']
 
-    def __init__(self, df, n_lineups, order=False, time_limit=10.0, verbose=False):
+    def __init__(self, df, n_lineups, team_limits=None, order=False, time_limit=10.0, verbose=False):
         self.df = df
         self.n_lineups = n_lineups
+        self._provision_team_limits(team_limits)
         self.order = order
         self.time_limit = time_limit
         self.verbose = verbose
@@ -80,10 +81,17 @@ class LineupOptimizer:
         self._construct_lp()
         self.result = None
         self.df_sorted_lineups = pd.DataFrame(columns=self.POSITION_COLS)
+
+    def _provision_team_limits(self, team_limits):
+        if team_limits is None:
+            self.team_limits = {}
+        else:
+            self.team_limits = team_limits
     
     def _provision_constraints_from_df(self):
         self.projections = self.df['projections'].values
         self.salaries = self.df['Salary'].values / 1000
+        self.teams = self.df['TeamAbbrev'].values
         pos_split = [pos.split('/') for pos in self.df['Position'].values]
         positions_mtx = np.zeros((len(pos_split), 5))
         for i in range(len(pos_split)):
@@ -137,8 +145,6 @@ class LineupOptimizer:
                 self.lp.variables.add(
                     names= ["y_" + str(i) + '_' + str(j)])
                 self.lp.variables.set_types("y_" + str(i) + '_' + str(j), self.lp.variables.type.binary)
-                # self.lp.variables.set_lower_bounds("y_" + str(i) + '_' + str(j), 0.0)
-                # self.lp.variables.set_upper_bounds("y_" + str(i) + '_' + str(j), 1.0)
                 self.lp.objective.set_linear(
                     "y_" + str(i) + '_' + str(j), 
                     (1 + self.order * (self.n_lineups - j - 1)) * self.projections[i])
@@ -208,6 +214,18 @@ class LineupOptimizer:
                 rhs=[np.ceil(self.max_exp[i] * self.n_lineups)],
                 names=["exp_limit_high"],
                 senses=["L"])
+
+        for team, lim in self.team_limits.items():
+            for j in range(self.n_lineups):
+                index = ["y_" + str(i) + '_' + str(j) for i in range(self.n_players) \
+                    if self.teams[i]==team]
+                self.lp.linear_constraints.add(
+                    lin_expr=[cplex.SparsePair(
+                        ind=index, 
+                        val=[1.0] * len(index))],
+                    rhs=[float(lim)],
+                    names=["team_limit"],
+                    senses=["L"])
 
     def solve(self):
         self.lp.solve()
