@@ -4,7 +4,6 @@ import numpy as np
 import time
 from scipy.stats import norm
 import cplex
-
 from fps_dfs_optimizer.src.optimizer import LineupOptimizer
 
 
