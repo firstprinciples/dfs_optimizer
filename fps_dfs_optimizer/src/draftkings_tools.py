@@ -114,7 +114,11 @@ class EntriesHandler:
         self.df = df
         self.df.index = self.df.Name
         self.df_sheet_lineups = pd.DataFrame(columns=self.POSITION_COLS)
-        self._read_entries()
+        if self.entries_path:
+            self._read_entries()
+        else:
+            self.df_entries = pd.DataFrame()
+
         self._make_id_map_dicts()
         if read_lineups:
             self._read_lineups()
@@ -162,7 +166,7 @@ class EntriesHandler:
         df_sheet_lineups.reset_index(0, drop=True, inplace=True)
         self.df_sheet_lineups = df_sheet_lineups
 
-    def add_lineups_to_entries(self, df_lineups, drop_entries=False, version=2):
+    def add_lineups_to_entries(self, df_lineups, drop_entries=False, path=None):
         if drop_entries:
             self.df_sheet_lineups = df_lineups
         else:
@@ -174,8 +178,12 @@ class EntriesHandler:
                 self.df_sheet_lineups = self.df_sheet_lineups.iloc[:-drop]
 
         self.df_sheet_lineups.reset_index(0, inplace=True, drop=True)
-        self.df_entries = pd.concat(
-            (self.df_entries[self.ENTRIES_COLS], self.df_sheet_lineups), axis=1)
+        if self.entries_path:
+            self.df_entries = pd.concat(
+                (self.df_entries[self.ENTRIES_COLS], self.df_sheet_lineups), axis=1)
+        else:
+            self.df_entries = self.df_sheet_lineups
+
         df_sal = pd.DataFrame(
             columns=self.POSITION_COLS,
             index=self.df_entries.index
@@ -196,9 +204,9 @@ class EntriesHandler:
                     df_points[col] = self.df_entries[col].map(name_to_actual_dict)
                 self.df_entries['dk_points_actual'] = df_points.sum(axis=1)
 
-        self._write_entries_to_csv(version=version, write_actual=write_actual)
+        self._write_entries_to_csv(path=path, write_actual=write_actual)
 
-    def _write_entries_to_csv(self, version=2, write_actual=False):
+    def _write_entries_to_csv(self, path, write_actual=False):
         if write_actual:
             df_entries_out = self.df_entries[self.POSITION_COLS]
             df_entries_out['dk_points_actual'] = self.df_entries['dk_points_actual']
@@ -208,12 +216,11 @@ class EntriesHandler:
             for col in self.POSITION_COLS:
                 df_entries_out[col] = self.df_entries[col].map(self.exit_map)
         
-            df_entries_out = pd.concat(
-                (self.df_entries[self.ENTRIES_COLS], df_entries_out), axis=1)
+            if self.entries_path:
+                df_entries_out = pd.concat(
+                    (self.df_entries[self.ENTRIES_COLS], df_entries_out), axis=1)
         
-        df_entries_out.to_csv(
-            self.entries_path[:-4] + \
-                '_' + str(version) + '.csv', index=False)
+        df_entries_out.to_csv(path, index=False)
 
     def get_player_distribution(self, df):
         flat = df.loc[:, self.POSITION_COLS].values.flatten()

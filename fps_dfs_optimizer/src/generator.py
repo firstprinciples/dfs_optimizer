@@ -151,6 +151,7 @@ class LineupGenerator:
         return self.df_lineups
 
     def enforce_exposures(self, var_multiple, n_lineups_to_optimize, verbose=False):
+        self.get_lineup_score_dists()
         player_dist = self.get_player_distribution(self.df_lineups)
         players = list(player_dist.index)
         lineup_mtx = self._get_lineup_mtx(players)
@@ -187,6 +188,7 @@ class LineupGenerator:
         return self.df_optimal
 
     def enforce_exposures_auto(self, var_multiple, cov_penalty, n_lineups_to_optimize, verbose=False):
+        self.get_lineup_correlation()
         max_ = np.minimum(1000, len(self.df_lineups))
         iterations = int(np.ceil(len(self.df_lineups) / max_))
         self.results = []
@@ -420,3 +422,7 @@ class ExposureEnforcerAuto:
             self.result = "infeasible"
 
         return self.result
+
+class JacksOptimizer(LineupGenerator):
+
+    _user="Jack"
