@@ -4,7 +4,6 @@ import numpy as np
 import time
 from scipy.stats import norm
 import cplex
-
 from fps_dfs_optimizer.src.optimizer import LineupOptimizer
 
 
@@ -17,7 +16,7 @@ class LineupGenerator:
         drop_fraction=0.5, time_limit=1, 
         duplicates_lim=100, verbose=False):
 
-        self.df = df[df['max_exp'] > 0]
+        self.df = df
         self.n_players = len(self.df)
         self.batch_size = batch_size
         self.drop_fraction = drop_fraction
@@ -39,6 +38,7 @@ class LineupGenerator:
             if gen_time is None:
                 gen_time = 5
 
+        self.df = self.df[self.df['max_exp'] > 0]
         self.df_lineups = pd.concat((self.df_lineups, 
             self._generate(n_lineups_to_generate, gen_time, order, team_limits)))     
         self.df_lineups.drop_duplicates(inplace=True)
