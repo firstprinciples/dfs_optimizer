@@ -1,8 +1,6 @@
-from os import write
 import pandas as pd
 import numpy as np
 import datetime as dt
-import time
 
 from draft_kings.data import Sport
 from draft_kings.client import contests, draftables
