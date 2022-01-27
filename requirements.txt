@@ -3,3 +3,4 @@
 
 # external requirements
 ipykernel
+pyomo
