@@ -39,6 +39,7 @@ class LineupGenerator:
                 gen_time = 5
 
         self.df = self.df[self.df['max_exp'] > 0]
+        self.n_players = len(self.df)
         self.df_lineups = pd.concat((self.df_lineups, 
             self._generate(n_lineups_to_generate, gen_time, order, team_limits)))     
         self.df_lineups.drop_duplicates(inplace=True)
