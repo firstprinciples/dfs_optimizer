@@ -3,7 +3,7 @@ import numpy as np
 import datetime as dt
 
 from draft_kings.data import Sport
-from draft_kings.client import contests, draftables
+# from draft_kings.client import contests, draftables
 
 def get_today():
     return dt.date.today()
